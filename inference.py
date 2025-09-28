@@ -1,33 +1,40 @@
 import os
-import sys 
+import sys
 import time
 import urllib.request
 import torch
+
 torch.manual_seed(123)
 
-from model import Llama3Model, generate, text_to_token_ids, token_ids_to_text
-from tokenizer import Llama3Tokenizer, ChatFormat, clean_text
-from model import LLAMA32_CONFIG_1B, LLAMA32_CONFIG_3B
+from utils.model import Llama3Model, generate, text_to_token_ids, token_ids_to_text
+from utils.tokenizer import Llama3Tokenizer, ChatFormat, clean_text
+from utils.model import LLAMA32_CONFIG_1B, LLAMA32_CONFIG_3B
 
 # ===== Hyper-parameter =====
-MODEL_FILE = "llama3.2-1B-base.pth"
+MODEL_FILE = "model/llama3.2-1B-instruct.pth"
 MODEL_CONTEXT_LENGTH = 8192  # Support up to 131_072
-MAX_NEW_TOKENS = 100
-TEMPERATURE = 0.
+MAX_NEW_TOKENS = 2048
+TEMPERATURE = 0.0
 TOP_K = 1
-TOKENIZER_FILE = "tokenizer.model"
+TOKENIZER_FILE = "model/tokenizer.model"
 
 # device = (
 #     torch.device("cuda") if torch.cuda.is_available() else
 #     torch.device("cpu")
 # )
 
-device = "cpu"
+device = "cuda"
 
 
 if __name__ == "__main__":
-    input_prompt = "What is the capital of Viet Nam?"
-    
+
+    # 0. Input prompt as argument
+    if len(sys.argv) > 1:
+        input_prompt = sys.argv[1]
+    else:
+        input_prompt = "What is the capital of Viet Nam?"
+    print(f"Input prompt: {input_prompt}")
+
     # 1. Load model
     if os.path.exists(MODEL_FILE) == False:
         print(f"[ERROR] Model does not exist !!!")
@@ -49,20 +56,19 @@ if __name__ == "__main__":
     model.to(device)
 
     print(f"Model {MODEL_FILE} loaded successfully !!!")
-    print(f"Model has {sum(p.numel() for p in model.parameters() if p.requires_grad):,} trainable parameters")
-
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Total parameters: {total_params/1e6:.2f} M")
 
     # 2. Load tokenizer
     if not os.path.exists(TOKENIZER_FILE):
         print(f"[ERROR] Does not have TOKENIZER_FILE")
         sys.exit(0)
-    
-    tokenizer = Llama3Tokenizer("tokenizer.model")
+
+    tokenizer = Llama3Tokenizer(TOKENIZER_FILE)
 
     if "instruct" in MODEL_FILE:
         tokenizer = ChatFormat(tokenizer)
     print(f"Tokenizer loaded successfully.")
-
 
     # 3. Generate text
     start = time.time()
@@ -73,19 +79,18 @@ if __name__ == "__main__":
         max_new_tokens=MAX_NEW_TOKENS,
         context_size=llama32_config["context_length"],
         top_k=TOP_K,
-        temperature=TEMPERATURE
+        temperature=TEMPERATURE,
     )
 
     print(f"Generation time: {time.time() - start:.2f} sec")
 
     if torch.cuda.is_available():
         max_mem_bytes = torch.cuda.max_memory_allocated()
-        max_mem_gb = max_mem_bytes / (1024 ** 3)
+        max_mem_gb = max_mem_bytes / (1024**3)
         print(f"Max memory allocated: {max_mem_gb:.2f} GB")
 
     output_text = token_ids_to_text(token_ids, tokenizer)
 
-    if "instruct" in MODEL_FILE:
-        output_text = clean_text(output_text)
+    output_text = clean_text(output_text)
 
     print("\nOutput text:\n", output_text)

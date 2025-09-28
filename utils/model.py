@@ -3,39 +3,39 @@ import torch.nn as nn
 
 
 LLAMA32_CONFIG_1B = {
-    "vocab_size": 128_256,           # Vocabulary size
-    "context_length": 131_072,       # Context length that was used to train the model
-    "emb_dim": 2048,                 # Embedding dimension
-    "n_heads": 32,                   # Number of attention heads
-    "n_layers": 16,                  # Number of layers
-    "hidden_dim": 8192,              # Size of the intermediate dimension in FeedForward
-    "n_kv_groups": 8,                # Key-Value groups for grouped-query attention
-    "rope_base": 500_000.0,          # The base in RoPE's "theta"
-    "dtype": torch.bfloat16,         # Lower-precision dtype to reduce memory usage
-    "rope_freq": {                   # RoPE frequency scaling
+    "vocab_size": 128_256,  # Vocabulary size
+    "context_length": 131_072,  # Context length that was used to train the model
+    "emb_dim": 2048,  # Embedding dimension
+    "n_heads": 32,  # Number of attention heads
+    "n_layers": 16,  # Number of layers
+    "hidden_dim": 8192,  # Size of the intermediate dimension in FeedForward
+    "n_kv_groups": 8,  # Key-Value groups for grouped-query attention
+    "rope_base": 500_000.0,  # The base in RoPE's "theta"
+    "dtype": torch.bfloat16,  # Lower-precision dtype to reduce memory usage
+    "rope_freq": {  # RoPE frequency scaling
         "factor": 32.0,
         "low_freq_factor": 1.0,
         "high_freq_factor": 4.0,
         "original_context_length": 8192,
-    }
+    },
 }
 
 LLAMA32_CONFIG_3B = {
-    "vocab_size": 128_256,           # Vocabulary size
-    "context_length": 131_072,       # Context length that was used to train the model
-    "emb_dim": 3072,                 # Embedding dimension
-    "n_heads": 24,                   # Number of attention heads
-    "n_layers": 28,                  # Number of layers
-    "hidden_dim": 8192,              # Size of the intermediate dimension in FeedForward
-    "n_kv_groups": 8,                # Key-Value groups for grouped-query attention
-    "rope_base": 500_000.0,          # The base in RoPE's "theta"
-    "dtype": torch.bfloat16,         # Lower-precision dtype to reduce memory usage
-    "rope_freq": {                   # RoPE frequency scaling
+    "vocab_size": 128_256,  # Vocabulary size
+    "context_length": 131_072,  # Context length that was used to train the model
+    "emb_dim": 3072,  # Embedding dimension
+    "n_heads": 24,  # Number of attention heads
+    "n_layers": 28,  # Number of layers
+    "hidden_dim": 8192,  # Size of the intermediate dimension in FeedForward
+    "n_kv_groups": 8,  # Key-Value groups for grouped-query attention
+    "rope_base": 500_000.0,  # The base in RoPE's "theta"
+    "dtype": torch.bfloat16,  # Lower-precision dtype to reduce memory usage
+    "rope_freq": {  # RoPE frequency scaling
         "factor": 32.0,
         "low_freq_factor": 1.0,
         "high_freq_factor": 4.0,
         "original_context_length": 8192,
-    }
+    },
 }
 
 
@@ -44,21 +44,25 @@ class Llama3Model(nn.Module):
         super().__init__()
 
         # Main model parameters
-        self.tok_emb = nn.Embedding(cfg["vocab_size"], cfg["emb_dim"], dtype=cfg["dtype"])
+        self.tok_emb = nn.Embedding(
+            cfg["vocab_size"], cfg["emb_dim"], dtype=cfg["dtype"]
+        )
 
         self.trf_blocks = nn.ModuleList(  # ModuleList since Sequential can only accept one input, and we need `x, mask, cos, sin`
             [TransformerBlock(cfg) for _ in range(cfg["n_layers"])]
         )
 
         self.final_norm = nn.RMSNorm(cfg["emb_dim"], eps=1e-5, dtype=cfg["dtype"])
-        self.out_head = nn.Linear(cfg["emb_dim"], cfg["vocab_size"], bias=False, dtype=cfg["dtype"])
+        self.out_head = nn.Linear(
+            cfg["emb_dim"], cfg["vocab_size"], bias=False, dtype=cfg["dtype"]
+        )
 
         # Reusuable utilities
         cos, sin = compute_rope_params(
             head_dim=cfg["emb_dim"] // cfg["n_heads"],
             theta_base=cfg["rope_base"],
             context_length=cfg["context_length"],
-            freq_config=cfg["rope_freq"]
+            freq_config=cfg["rope_freq"],
         )
         self.register_buffer("cos", cos, persistent=False)
         self.register_buffer("sin", sin, persistent=False)
@@ -69,7 +73,10 @@ class Llama3Model(nn.Module):
         x = tok_embeds
 
         num_tokens = x.shape[1]
-        mask = torch.triu(torch.ones(num_tokens, num_tokens, device=x.device, dtype=torch.bool), diagonal=1)
+        mask = torch.triu(
+            torch.ones(num_tokens, num_tokens, device=x.device, dtype=torch.bool),
+            diagonal=1,
+        )
 
         for block in self.trf_blocks:
             x = block(x, mask, self.cos, self.sin)
@@ -86,7 +93,7 @@ class TransformerBlock(nn.Module):
             d_out=cfg["emb_dim"],
             num_heads=cfg["n_heads"],
             num_kv_groups=cfg["n_kv_groups"],
-            dtype=cfg["dtype"]
+            dtype=cfg["dtype"],
         )
         self.ff = FeedForward(cfg)
         self.norm1 = nn.RMSNorm(cfg["emb_dim"], eps=1e-5, dtype=cfg["dtype"])
@@ -111,9 +118,15 @@ class TransformerBlock(nn.Module):
 class FeedForward(nn.Module):
     def __init__(self, cfg):
         super().__init__()
-        self.fc1 = nn.Linear(cfg["emb_dim"], cfg["hidden_dim"], dtype=cfg["dtype"], bias=False)
-        self.fc2 = nn.Linear(cfg["emb_dim"], cfg["hidden_dim"], dtype=cfg["dtype"], bias=False)
-        self.fc3 = nn.Linear(cfg["hidden_dim"], cfg["emb_dim"], dtype=cfg["dtype"], bias=False)
+        self.fc1 = nn.Linear(
+            cfg["emb_dim"], cfg["hidden_dim"], dtype=cfg["dtype"], bias=False
+        )
+        self.fc2 = nn.Linear(
+            cfg["emb_dim"], cfg["hidden_dim"], dtype=cfg["dtype"], bias=False
+        )
+        self.fc3 = nn.Linear(
+            cfg["hidden_dim"], cfg["emb_dim"], dtype=cfg["dtype"], bias=False
+        )
 
     def forward(self, x):
         x_fc1 = self.fc1(x)
@@ -123,19 +136,23 @@ class FeedForward(nn.Module):
 
 
 class GroupedQueryAttention(nn.Module):
-    def __init__(
-            self, d_in, d_out, num_heads, num_kv_groups, dtype=None
-    ):
+    def __init__(self, d_in, d_out, num_heads, num_kv_groups, dtype=None):
         super().__init__()
         assert d_out % num_heads == 0, "d_out must be divisible by num_heads"
-        assert num_heads % num_kv_groups == 0, "num_heads must be divisible by num_kv_groups"
+        assert (
+            num_heads % num_kv_groups == 0
+        ), "num_heads must be divisible by num_kv_groups"
 
         self.d_out = d_out
         self.num_heads = num_heads
         self.head_dim = d_out // num_heads
 
-        self.W_key = nn.Linear(d_in, num_kv_groups * self.head_dim, bias=False, dtype=dtype)
-        self.W_value = nn.Linear(d_in, num_kv_groups * self.head_dim, bias=False, dtype=dtype)
+        self.W_key = nn.Linear(
+            d_in, num_kv_groups * self.head_dim, bias=False, dtype=dtype
+        )
+        self.W_value = nn.Linear(
+            d_in, num_kv_groups * self.head_dim, bias=False, dtype=dtype
+        )
         self.num_kv_groups = num_kv_groups
         self.group_size = num_heads // num_kv_groups
 
@@ -157,7 +174,9 @@ class GroupedQueryAttention(nn.Module):
         # Transpose keys, values, and queries
         keys = keys.transpose(1, 2)  # Shape: (b, num_heads, num_tokens, head_dim)
         values = values.transpose(1, 2)  # Shape: (b, num_heads, num_tokens, head_dim)
-        queries = queries.transpose(1, 2)  # Shape: (b, num_query_groups, num_tokens, head_dim)
+        queries = queries.transpose(
+            1, 2
+        )  # Shape: (b, num_query_groups, num_tokens, head_dim)
 
         # Apply RoPE
         keys = apply_rope(keys, cos, sin)
@@ -165,17 +184,23 @@ class GroupedQueryAttention(nn.Module):
 
         # Expand keys and values to match the number of heads
         # Shape: (b, num_heads, num_tokens, head_dim)
-        keys = keys.repeat_interleave(self.group_size, dim=1)  # Shape: (b, num_heads, num_tokens, head_dim)
-        values = values.repeat_interleave(self.group_size, dim=1)  # Shape: (b, num_heads, num_tokens, head_dim)
-    
+        keys = keys.repeat_interleave(
+            self.group_size, dim=1
+        )  # Shape: (b, num_heads, num_tokens, head_dim)
+        values = values.repeat_interleave(
+            self.group_size, dim=1
+        )  # Shape: (b, num_heads, num_tokens, head_dim)
+
         # Compute scaled dot-product attention (aka self-attention) with a causal mask
         # Shape: (b, num_heads, num_tokens, num_tokens)
         attn_scores = queries @ keys.transpose(2, 3)  # Dot product for each head
 
         # Use the mask to fill attention scores
-        attn_scores = attn_scores.masked_fill(mask[:num_tokens, :num_tokens], -torch.inf)
+        attn_scores = attn_scores.masked_fill(
+            mask[:num_tokens, :num_tokens], -torch.inf
+        )
 
-        attn_weights = torch.softmax(attn_scores / keys.shape[-1]**0.5, dim=-1)
+        attn_weights = torch.softmax(attn_scores / keys.shape[-1] ** 0.5, dim=-1)
         assert keys.shape[-1] == self.head_dim
 
         # Shape: (b, num_tokens, num_heads, head_dim)
@@ -188,16 +213,32 @@ class GroupedQueryAttention(nn.Module):
         return context_vec
 
 
-def compute_rope_params(head_dim, theta_base=10_000, context_length=4096, freq_config=None, dtype=torch.float32):
+def compute_rope_params(
+    head_dim,
+    theta_base=10_000,
+    context_length=4096,
+    freq_config=None,
+    dtype=torch.float32,
+):
     assert head_dim % 2 == 0, "Embedding dimension must be even"
 
     # Compute the inverse frequencies
-    inv_freq = 1.0 / (theta_base ** (torch.arange(0, head_dim, 2, dtype=dtype)[: (head_dim // 2)].float() / head_dim))
+    inv_freq = 1.0 / (
+        theta_base
+        ** (
+            torch.arange(0, head_dim, 2, dtype=dtype)[: (head_dim // 2)].float()
+            / head_dim
+        )
+    )
 
     # Frequency adjustments
     if freq_config is not None:
-        low_freq_wavelen = freq_config["original_context_length"] / freq_config["low_freq_factor"]
-        high_freq_wavelen = freq_config["original_context_length"] / freq_config["high_freq_factor"]
+        low_freq_wavelen = (
+            freq_config["original_context_length"] / freq_config["low_freq_factor"]
+        )
+        high_freq_wavelen = (
+            freq_config["original_context_length"] / freq_config["high_freq_factor"]
+        )
 
         wavelen = 2 * torch.pi / inv_freq
 
@@ -205,13 +246,14 @@ def compute_rope_params(head_dim, theta_base=10_000, context_length=4096, freq_c
             wavelen > low_freq_wavelen, inv_freq / freq_config["factor"], inv_freq
         )
 
-        smooth_factor = (freq_config["original_context_length"] / wavelen - freq_config["low_freq_factor"]) / (
-            freq_config["high_freq_factor"] - freq_config["low_freq_factor"]
-        )
+        smooth_factor = (
+            freq_config["original_context_length"] / wavelen
+            - freq_config["low_freq_factor"]
+        ) / (freq_config["high_freq_factor"] - freq_config["low_freq_factor"])
 
-        smoothed_inv_freq = (
-            (1 - smooth_factor) * (inv_freq / freq_config["factor"]) + smooth_factor * inv_freq
-        )
+        smoothed_inv_freq = (1 - smooth_factor) * (
+            inv_freq / freq_config["factor"]
+        ) + smooth_factor * inv_freq
 
         is_medium_freq = (wavelen <= low_freq_wavelen) & (wavelen >= high_freq_wavelen)
         inv_freq_llama = torch.where(is_medium_freq, smoothed_inv_freq, inv_freq_llama)
@@ -221,7 +263,9 @@ def compute_rope_params(head_dim, theta_base=10_000, context_length=4096, freq_c
     positions = torch.arange(context_length, dtype=dtype)
 
     # Compute the angles
-    angles = positions[:, None] * inv_freq[None, :]  # Shape: (context_length, head_dim // 2)
+    angles = (
+        positions[:, None] * inv_freq[None, :]
+    )  # Shape: (context_length, head_dim // 2)
 
     # Expand angles to match the head_dim
     angles = torch.cat([angles, angles], dim=1)  # Shape: (context_length, head_dim)
@@ -240,7 +284,7 @@ def apply_rope(x, cos, sin):
 
     # Split x into first half and second half
     x1 = x[..., : head_dim // 2]  # First half
-    x2 = x[..., head_dim // 2:]  # Second half
+    x2 = x[..., head_dim // 2 :]  # Second half
 
     # Adjust sin and cos shapes
     cos = cos[:seq_len, :].unsqueeze(0).unsqueeze(0)  # Shape: (1, 1, seq_len, head_dim)
@@ -265,7 +309,11 @@ def token_ids_to_text(token_ids, tokenizer):
     return tokenizer.decode(flat.tolist())
 
 
-def generate(model, idx, max_new_tokens, context_size, temperature=0.0, top_k=None, eos_id=None):
+def generate(
+    model, idx, max_new_tokens, context_size, temperature=0.0, top_k=None, eos_id=None
+):
+
+    is_end_of_sequence = False  # Flag to indicate if EOS token is generated
 
     # For-loop is the same as before: Get logits, and only focus on last time step
     for _ in range(max_new_tokens):
@@ -279,7 +327,9 @@ def generate(model, idx, max_new_tokens, context_size, temperature=0.0, top_k=No
             # Keep only top_k values
             top_logits, _ = torch.topk(logits, top_k)
             min_val = top_logits[:, -1]
-            logits = torch.where(logits < min_val, torch.tensor(float('-inf')).to(logits.device), logits)
+            logits = torch.where(
+                logits < min_val, torch.tensor(float("-inf")).to(logits.device), logits
+            )
 
         # Apply temperature scaling
         if temperature > 0.0:
@@ -295,10 +345,18 @@ def generate(model, idx, max_new_tokens, context_size, temperature=0.0, top_k=No
         else:
             idx_next = torch.argmax(logits, dim=-1, keepdim=True)  # (batch_size, 1)
 
-        if idx_next == eos_id:  # Stop generating early if end-of-sequence token is encountered and eos_id is specified
+        if (
+            idx_next == eos_id
+        ):  # Stop generating early if end-of-sequence token is encountered and eos_id is specified
+            is_end_of_sequence = True
             break
 
         # Same as before: append sampled index to the running sequence
         idx = torch.cat((idx, idx_next), dim=1)  # (batch_size, num_tokens+1)
+
+    if is_end_of_sequence == False:
+        print(
+            f"\n [WARNING]: Reached limit of {max_new_tokens} token without generating an EOS token. \n"
+        )
 
     return idx

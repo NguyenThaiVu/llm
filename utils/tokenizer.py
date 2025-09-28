@@ -1,11 +1,6 @@
-# Copyright (c) Sebastian Raschka under Apache License 2.0 (see LICENSE.txt).
 # Source for "Build a Large Language Model From Scratch"
-# https://github.com/rasbt/LLMs-from-scratch/blob/main/ch05/07_gpt_to_llama/standalone-llama32.ipynb
-
-
 import os
 from pathlib import Path
-
 import tiktoken
 from tiktoken.load import load_tiktoken_bpe
 
@@ -47,7 +42,7 @@ class Llama3Tokenizer:
         ids: list[int] = []
 
         if bos:
-            ids.append(self.special_tokens["<|begin_of_text|>"])
+            ids.append(self.special["<|begin_of_text|>"])
 
         # delegate to underlying tiktoken.Encoding.encode
         ids.extend(
@@ -57,7 +52,7 @@ class Llama3Tokenizer:
             )
         )
         if eos:
-            ids.append(self.special_tokens["<|end_of_text|>"])
+            ids.append(self.special["<|end_of_text|>"])
 
         return ids
 
@@ -81,7 +76,7 @@ class ChatFormat:
             + self.tok.encode("\n\n")
         )
 
-    def encode(self, user_message, system_message=None, allowed_special=None):
+    def encode(self, user_message, system_message=None, allowed_special=set()):
         sys_msg = system_message if system_message is not None else self.default_system
 
         ids = [self.tok.special["<|begin_of_text|>"]]
@@ -105,13 +100,19 @@ class ChatFormat:
         return self.tok.decode(ids)
 
 
-def clean_text(text, header_end="assistant<|end_header_id|>\n\n"):
-    # Find the index of the first occurrence of "<|end_header_id|>"
-    index = text.find(header_end)
+def clean_text(text):
+    # Trim everything before the assistant header
+    start_marker = "<|start_header_id|>assistant<|end_header_id|>\n\n"
+    end_marker = "<|eot_id|>"
 
-    if index != -1:
-        # Return the substring starting after "<|end_header_id|>"
-        return text[index + len(header_end):].strip()  # Strip removes leading/trailing whitespace
-    else:
-        # If the token is not found, return the original text
-        return text
+    start = text.find(start_marker)
+    if start != -1:
+        text = text[start + len(start_marker):]
+
+    # Trim anything after the assistant's end-of-turn token
+    end = text.find(end_marker)
+    if end != -1:
+        text = text[:end]
+
+    return text.strip()
+
